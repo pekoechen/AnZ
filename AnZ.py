@@ -1,8 +1,11 @@
+import argparse
 import sys
 import os
 import re
 import importlib
 import shutil
+import statistics
+
 import pandas as pd
 from collections import Counter
 from pathlib import Path
@@ -12,6 +15,32 @@ from pathlib import Path
 #import json
 #from xlsxwriter.utility import xl_rowcol_to_cell
 #from xlsxwriter.utility import xl_range
+
+def string2floatList(input_str):
+  return list(map(float, input_str.split(';')))
+
+def status(x):
+  return pd.Series([
+    x.count(), x.min(),x.idxmin(), x.quantile(.25), x.median(), 
+    x.quantile(.75), x.mean(), x.max(), x.idxmax(), 
+    x.var(), x.std(), x.skew(), x.kurt()], 
+    index=['COUNT','MIN', 'IDX_MIN','25%','50%', '75%',
+          'MEAN', 'MAX', 'IDX_MAX','VAR', 'STD', 'SKEW', 'KURT'])
+
+def build_parser():
+  parser = argparse.ArgumentParser()
+  subcmd = parser.add_subparsers(
+    required=True,
+    dest='subcmd',
+    help='sub commands')
+
+  anz_parser = subcmd.add_parser('summary', help='XXXX')
+  anz_parser.add_argument('-o', '--output', 
+      help='please input the output folder', dest='output', required=True)
+  anz_parser.add_argument('-i', '--input', 
+      help='please input the input folder', dest='input', required=True)
+  return parser
+
 
 def parsing_Results(db, line):
   pattern = (r'Segment\s*(\d*)\s*\[(.*)\];(.*);(.*)')
@@ -35,9 +64,6 @@ def parsing_Global(db, line):
     db[attr] = {'val':m.group(2), 'unit':m.group(3)}
     pass
   return
-
-def string2floatList(input_str):
-  return list(map(float, input_str.split(';')))
 
 def parsing_Curves(db, line):
   if 'Time' in line:
@@ -76,7 +102,7 @@ def parsing_Curves(db, line):
   return
 
 def process_one_file(file_path):
-  print(f'file_path:{file_path}')
+  print(f'processing file_path:{file_path}...')
   lines = None
   with open(file_path, 'r') as f:
     lines = f.readlines()
@@ -153,20 +179,19 @@ def process_one_file(file_path):
       print(f'\t\tkey:{key}, val:{val}')
     print('*'*40)
   '''
-
   return infos
 
-def process_one_case(case_id):
-  def get_file_path(case_id, file_type):
-    return Path('A1AF', f'QLAB_{case_id}', f'{file_type}{case_id}.txt')
+def process_one_case(input_path, case_id):
+  def get_file_path(input_path, case_id, file_type):
+    return input_path.joinpath(f'QLAB_{case_id}', f'{file_type}{case_id}.txt')
 
-  file_path = get_file_path(case_id, 'LA')
+  file_path = get_file_path(input_path, case_id, 'LA')
   db_LA = process_one_file(file_path)
 
-  file_path = get_file_path(case_id, 'LV')
+  file_path = get_file_path(input_path, case_id, 'LV')
   db_LV = process_one_file(file_path)
 
-  file_path = get_file_path(case_id, 'RV')
+  file_path = get_file_path(input_path, case_id, 'RV')
   db_RV = process_one_file(file_path)
   
   return {'LA':db_LA, 'LV':db_LV, 'RV':db_RV}
@@ -210,12 +235,11 @@ def data_process(one_case_db):
 def data_process_curves(output_path, case_list, cases_db_list):
   print('###############################')
   print('# process curves')
+  print('###############################')
+
   files = ['LA', 'LV', 'RV']
-
-
   curves_all_section_db = {}
 
-  print
   for case_id, one_case_db in zip(case_list, cases_db_list):
     print(f'{case_id}')
     dbs_curves = [
@@ -229,42 +253,62 @@ def data_process_curves(output_path, case_list, cases_db_list):
       for section, attrs in db.items():
         file_section_name = f'{file_type}_{section}'
         #print(file_section_name)
-        for key, data in attrs.items():
+        for key, a_list_of_data in attrs.items():
           if 'interval' == key:
+            continue
+          if 'Segment' in key:
             continue
 
           file_section_key_name = f'Curves_{file_section_name}_{key}'
           #print(f'\tkey:{file_section_key_name}')
-          #print(f'\t\tdata:{data}')
+          #print(f'\t\tdata:{a_list_of_data}')
           section_db = curves_all_section_db.setdefault(file_section_key_name, {})
-          section_db[case_id] = data
-    pass
+          #section_db[case_id] = a_list_of_data
 
-
-  for sec_name, data in curves_all_section_db.items():
-    print(f'section: {sec_name}')
-    for id, vals in data.items():
-      #print(f'\tid:{id}, {vals}')
-      print(f'\tid:{id}, {len(vals)}')
-
-      pass
-    print('*'*40)
+          section_db[case_id] = {
+            'min': min(a_list_of_data),
+            'max': max(a_list_of_data),
+            'mean':statistics.mean(a_list_of_data),
+            'median':statistics.median(a_list_of_data),
+            'stdev':statistics.stdev(a_list_of_data)
+          }
     pass
 
   for sec_name, data in curves_all_section_db.items():
-    print(f'section: {sec_name}')
+    #print(f'section: {sec_name}')
     df = pd.DataFrame.from_dict(data)
 
-    print(df.T)
+    #print(df.T)
     output_file_path = output_path.joinpath(f'{sec_name}.csv')
     df.T.to_csv(output_file_path)
-    pass
-  
+
+
+  # for sec_name, data in curves_all_section_db.items():
+  #   print(f'section: {sec_name}')
+  #   for id, vals in data.items():
+  #     #print(f'\tid:{id}, {vals}')
+  #     print(f'\tid:{id}, {len(vals)}')
+
+  #     pass
+  #   print('*'*40)
+  #   pass
+
+  # for sec_name, data in curves_all_section_db.items():
+  #   print(f'section: {sec_name}')
+  #   df = pd.DataFrame.from_dict(data)
+
+  #   print(df.T)
+  #   output_file_path = output_path.joinpath(f'{sec_name}.csv')
+  #   df.T.to_csv(output_file_path)
+  #   pass
+
   return
 
 def data_process_general(output_path, case_list, cases_db_list):
-  files = ['LA', 'LV', 'RV']  
-  
+  print('###############################')
+  print('# process General')
+  print('###############################')
+
   output_dict = {}
   for case_id, one_case_db in zip(case_list, cases_db_list):
     print(f'{case_id}')
@@ -272,23 +316,30 @@ def data_process_general(output_path, case_list, cases_db_list):
     output_dict[case_id] = one_case_processed_done
     #print(one_attrs)
 
-  df = pd.DataFrame.from_dict(output_dict)
-  print(df)
+  
+  df = pd.DataFrame.from_dict(output_dict).T
+  df = df.apply(pd.to_numeric, errors='raise')  
+  df_stats = pd.DataFrame(status(df))
+  #print(df)
+
   output_file_path = output_path.joinpath(f'summary.csv')
-  df.T.to_csv(output_file_path)
+  df.to_csv(output_file_path)
+
+  output_file_path = output_path.joinpath(f'stats.csv')
+  df_stats.to_csv(output_file_path)
   return
 
-def init(cur_path):
-  output_path = Path(cur_path, 'output')
+def init(args):
+#  cur_path = Path(__file__).parent.resolve()
+  input_path = Path(args.input)
+  output_path = Path(args.output)
+
   #os.removedirs(output_path)
   shutil.rmtree(output_path, ignore_errors=True)
   if not os.path.exists(output_path):
     os.makedirs(output_path)
   
-  case_list = []
-  input_path = cur_path.joinpath('A1AF')
   dirs = os.listdir(input_path)
-
   case_list = []
   pattern = (r'QLAB_(\d*)$')
   regex = re.compile(pattern)
@@ -301,28 +352,34 @@ def init(cur_path):
   return case_list
 
 def main():
-  cur_path = Path(__file__).parent.resolve()
-  output_path = Path(cur_path, 'output')
-  #output_path_curves = output_path.joinpath('Curves')
-  case_list = init(cur_path)
+  parser = build_parser()
+  args = parser.parse_args()
 
-  #case_list = ['0002','0005','0007']
-  cases_db_list = []
-  for one_case in case_list:
-    one_case_db = process_one_case(one_case)
-    cases_db_list.append(one_case_db)
-    pass
+  if args.subcmd == 'summary':
+    input_path = Path(args.input)
+    output_path = Path(args.output)
+    case_list = init(args)
 
-###############################
-# process General
-  data_process_general(output_path, case_list, cases_db_list)
+    print(case_list)
 
-###############################
-# process curves
-#  data_process_curves(output_path_curves, case_list, cases_db_list)
+    #case_list = ['0002','0005','0007']
+    cases_db_list = []
+    for case_id in case_list:
+      one_case_db = process_one_case(input_path, case_id)
+      cases_db_list.append(one_case_db)
+      pass
+
+    data_process_general(output_path, case_list, cases_db_list)
+    
+    output_path_curves = output_path.joinpath('Curves')
+    if not os.path.exists(output_path_curves):
+      os.makedirs(output_path_curves)    
+    data_process_curves(output_path_curves, case_list, cases_db_list)
+    
+    return
+
   return
 
 if __name__ == '__main__':
   main()
-  print('HI Russell')
   sys.exit(0)
