@@ -4,12 +4,12 @@ import os
 import re
 import importlib
 import shutil
-import statistics
-
 import pandas as pd
 from collections import Counter
 from pathlib import Path
 
+import csv
+#import statistics
 #import math
 #import xlsxwriter
 #import json
@@ -239,6 +239,7 @@ def data_process_curves(output_path, case_list, cases_db_list):
 
   files = ['LA', 'LV', 'RV']
   curves_all_section_db = {}
+  output_list = []
 
   for case_id, one_case_db in zip(case_list, cases_db_list):
     print(f'{case_id}')
@@ -253,55 +254,29 @@ def data_process_curves(output_path, case_list, cases_db_list):
       for section, attrs in db.items():
         file_section_name = f'{file_type}_{section}'
         #print(file_section_name)
-        for key, a_list_of_data in attrs.items():
+        for key, data in attrs.items():
           if 'interval' == key:
             continue
           if 'Segment' in key:
-            continue
+            segmentData = data
+            for seg_id, a_list_of_data in data.items():
+              output_list.append( [case_id, file_type, section, f'Segment_{seg_id}'] + a_list_of_data)
+          else:
+            a_list_of_data = data
+            output_list.append( [case_id, file_type, section, key] + a_list_of_data)
 
-          file_section_key_name = f'Curves_{file_section_name}_{key}'
-          #print(f'\tkey:{file_section_key_name}')
-          #print(f'\t\tdata:{a_list_of_data}')
-          section_db = curves_all_section_db.setdefault(file_section_key_name, {})
-          #section_db[case_id] = a_list_of_data
-
-          section_db[case_id] = {
-            'min': min(a_list_of_data),
-            'max': max(a_list_of_data),
-            'mean':statistics.mean(a_list_of_data),
-            'median':statistics.median(a_list_of_data),
-            'stdev':statistics.stdev(a_list_of_data)
-          }
+            file_section_key_name = f'Curves_{file_section_name}_{key}'
+            #print(f'\tkey:{file_section_key_name}')
+            #print(f'\t\tdata:{a_list_of_data}')
+            #section_db = curves_all_section_db.setdefault(file_section_key_name, {})
+            #section_db[case_id] = a_list_of_data
     pass
 
-  for sec_name, data in curves_all_section_db.items():
-    #print(f'section: {sec_name}')
-    df = pd.DataFrame.from_dict(data)
-
-    #print(df.T)
-    output_file_path = output_path.joinpath(f'{sec_name}.csv')
-    df.T.to_csv(output_file_path)
-
-
-  # for sec_name, data in curves_all_section_db.items():
-  #   print(f'section: {sec_name}')
-  #   for id, vals in data.items():
-  #     #print(f'\tid:{id}, {vals}')
-  #     print(f'\tid:{id}, {len(vals)}')
-
-  #     pass
-  #   print('*'*40)
-  #   pass
-
-  # for sec_name, data in curves_all_section_db.items():
-  #   print(f'section: {sec_name}')
-  #   df = pd.DataFrame.from_dict(data)
-
-  #   print(df.T)
-  #   output_file_path = output_path.joinpath(f'{sec_name}.csv')
-  #   df.T.to_csv(output_file_path)
-  #   pass
-
+  output_file_path = output_path.joinpath(f'curves.csv')
+  with open(output_file_path, 'w', newline='') as file:
+    #writer = csv.writer(file, quoting=csv.QUOTE_ALL,delimiter=';')
+    writer = csv.writer(file,delimiter=';')
+    writer.writerows(output_list)
   return
 
 
@@ -372,10 +347,10 @@ def main():
 
     data_process_general(output_path, case_list, cases_db_list)
     
-    output_path_curves = output_path.joinpath('Curves')
-    if not os.path.exists(output_path_curves):
-      os.makedirs(output_path_curves)    
-    data_process_curves(output_path_curves, case_list, cases_db_list)
+    #output_path_curves = output_path.joinpath('Curves')
+    #if not os.path.exists(output_path_curves):
+    #  os.makedirs(output_path_curves)    
+    data_process_curves(output_path, case_list, cases_db_list)
     
     return
 
