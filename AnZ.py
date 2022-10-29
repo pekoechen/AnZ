@@ -304,6 +304,7 @@ def data_process_curves(output_path, case_list, cases_db_list):
 
   return
 
+
 def data_process_general(output_path, case_list, cases_db_list):
   print('###############################')
   print('# process General')
