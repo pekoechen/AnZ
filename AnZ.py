@@ -16,6 +16,9 @@ import csv
 #from xlsxwriter.utility import xl_rowcol_to_cell
 #from xlsxwriter.utility import xl_range
 
+
+
+
 def string2floatList(input_str):
   return list(map(float, input_str.split(';')))
 
@@ -62,6 +65,10 @@ def parsing_Global(db, line):
   for m in match:
     attr = m.group(1)
     db[attr] = {'val':m.group(2), 'unit':m.group(3)}
+
+    if m.group(2) == '--.--':
+      print (f'\t{line}')    
+      #db[attr]['val'] = '99999999'
     pass
   return
 
@@ -101,8 +108,15 @@ def parsing_Curves(db, line):
       pass
   return
 
-def process_one_file(file_path):
+def process_one_file(file_path, error_log):
   print(f'processing file_path:{file_path}...')
+  if not file_path.exists():
+    with open(error_log, 'a') as f:
+      errmsg = f'NO EXIST!! {file_path}'
+      print(errmsg)
+      f.write(errmsg+'\n')
+    return {}
+
   lines = None
   with open(file_path, 'r') as f:
     lines = f.readlines()
@@ -181,18 +195,18 @@ def process_one_file(file_path):
   '''
   return infos
 
-def process_one_case(input_path, case_id):
+def process_one_case(input_path, case_id, error_log):
   def get_file_path(input_path, case_id, file_type):
     return input_path.joinpath(f'QLAB_{case_id}', f'{file_type}{case_id}.txt')
 
   file_path = get_file_path(input_path, case_id, 'LA')
-  db_LA = process_one_file(file_path)
+  db_LA = process_one_file(file_path, error_log)
 
   file_path = get_file_path(input_path, case_id, 'LV')
-  db_LV = process_one_file(file_path)
+  db_LV = process_one_file(file_path, error_log)
 
   file_path = get_file_path(input_path, case_id, 'RV')
-  db_RV = process_one_file(file_path)
+  db_RV = process_one_file(file_path, error_log)
   
   return {'LA':db_LA, 'LV':db_LV, 'RV':db_RV}
 
@@ -294,15 +308,15 @@ def data_process_general(output_path, case_list, cases_db_list):
 
   
   df = pd.DataFrame.from_dict(output_dict).T
-  df = df.apply(pd.to_numeric, errors='raise')  
-  df_stats = pd.DataFrame(status(df))
+  #df = df.apply(pd.to_numeric, errors='raise')  
+  #df_stats = pd.DataFrame(status(df))
   #print(df)
 
   output_file_path = output_path.joinpath(f'summary.csv')
   df.to_csv(output_file_path)
 
-  output_file_path = output_path.joinpath(f'stats.csv')
-  df_stats.to_csv(output_file_path)
+  #output_file_path = output_path.joinpath(f'stats.csv')
+  #df_stats.to_csv(output_file_path)
   return
 
 def init(args):
@@ -310,11 +324,13 @@ def init(args):
   input_path = Path(args.input)
   output_path = Path(args.output)
 
+
+
   #os.removedirs(output_path)
   shutil.rmtree(output_path, ignore_errors=True)
   if not os.path.exists(output_path):
     os.makedirs(output_path)
-  
+
   dirs = os.listdir(input_path)
   case_list = []
   pattern = (r'QLAB_(\d*)$')
@@ -327,6 +343,8 @@ def init(args):
   
   return case_list
 
+
+
 def main():
   parser = build_parser()
   args = parser.parse_args()
@@ -336,12 +354,14 @@ def main():
     output_path = Path(args.output)
     case_list = init(args)
 
+    error_log = output_path.joinpath('error.log')
+
     print(case_list)
 
     #case_list = ['0002','0005','0007']
     cases_db_list = []
     for case_id in case_list:
-      one_case_db = process_one_case(input_path, case_id)
+      one_case_db = process_one_case(input_path, case_id, error_log)
       cases_db_list.append(one_case_db)
       pass
 
